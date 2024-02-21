@@ -21,6 +21,8 @@ import random
 from federatedml.secureprotol import gmpy_math
 from federatedml.secureprotol.fixedpoint import FixedPointNumber
 
+from federatedml.util import LOGGER
+
 
 class PaillierKeypair(object):
     def __init__(self):
@@ -71,26 +73,35 @@ class PaillierPublicKey(object):
         """
         """
         r = random_value or random.SystemRandom().randrange(1, self.n)
-        obfuscator = gmpy_math.powmod(r, self.n, self.nsquare)
 
-        return (ciphertext * obfuscator) % self.nsquare
+#        obfuscator = gmpy_math.powmod(r, self.n, self.nsquare)
+        obfuscator = r * self.n
+        return (ciphertext + obfuscator) % self.nsquare
 
     def raw_encrypt(self, plaintext, random_value=None):
         """
         """
+        LOGGER.info("Enter raw_encrypt")
         if not isinstance(plaintext, int):
             raise TypeError("plaintext should be int, but got: %s" %
                             type(plaintext))
 
-        if plaintext >= (self.n - self.max_int) and plaintext < self.n:
+#        if plaintext >= (self.n - self.max_int) and plaintext < self.n:
             # Very large plaintext, take a sneaky shortcut using inverses
-            neg_plaintext = self.n - plaintext  # = abs(plaintext - nsquare)
-            neg_ciphertext = (self.n * neg_plaintext + 1) % self.nsquare
-            ciphertext = gmpy_math.invert(neg_ciphertext, self.nsquare)
-        else:
-            ciphertext = (self.n * plaintext + 1) % self.nsquare
+#            neg_plaintext = self.n - plaintext  # = abs(plaintext - nsquare)
+#            neg_ciphertext = (self.n * neg_plaintext + 1) % self.nsquare
+#            ciphertext = gmpy_math.invert(neg_ciphertext, self.nsquare)
+#        else:
+#            ciphertext = (self.n * plaintext + 1) % self.nsquare
 
+        
+#        ciphertext = self.apply_obfuscator(ciphertext, random_value)
+        
+        ciphertext = plaintext
         ciphertext = self.apply_obfuscator(ciphertext, random_value)
+
+
+        LOGGER.info("Exit raw_encrypt")
 
         return ciphertext
 
@@ -166,9 +177,15 @@ class PaillierPrivateKey(object):
     def raw_decrypt(self, ciphertext):
         """return raw plaintext.
         """
+        LOGGER.info("Enter raw_decrypt")
+
+        
         if not isinstance(ciphertext, int):
             raise TypeError("ciphertext should be an int, not: %s" %
                             type(ciphertext))
+
+#        ciphertext = (gmpy_math.powmod(self.public_key.g,ciphertext,self.public_key.nsquare)
+        ciphertext = (1 + self.public_key.n * ciphertext) % self.public_key.nsquare
 
         mp = self.l_func(gmpy_math.powmod(ciphertext,
                                           self.p - 1, self.psquare),
@@ -177,6 +194,8 @@ class PaillierPrivateKey(object):
         mq = self.l_func(gmpy_math.powmod(ciphertext,
                                           self.q - 1, self.qsquare),
                          self.q) * self.hq % self.q
+
+        LOGGER.info("Exit raw_decrypt")
 
         return self.crt(mp, mq)
 
@@ -254,6 +273,10 @@ class PaillierEncryptedNumber(object):
     def __mul__(self, scalar):
         """return Multiply by an scalar(such as int, float)
         """
+
+        LOGGER.info("Enter __mul__")
+
+
         if isinstance(scalar, FixedPointNumber):
             scalar = scalar.decode()
         encode = FixedPointNumber.encode(scalar, self.public_key.n, self.public_key.max_int)
@@ -262,15 +285,19 @@ class PaillierEncryptedNumber(object):
         if plaintext < 0 or plaintext >= self.public_key.n:
             raise ValueError("Scalar out of bounds: %i" % plaintext)
 
-        if plaintext >= self.public_key.n - self.public_key.max_int:
-            # Very large plaintext, play a sneaky trick using inverses
-            neg_c = gmpy_math.invert(self.ciphertext(False), self.public_key.nsquare)
-            neg_scalar = self.public_key.n - plaintext
-            ciphertext = gmpy_math.powmod(neg_c, neg_scalar, self.public_key.nsquare)
-        else:
-            ciphertext = gmpy_math.powmod(self.ciphertext(False), plaintext, self.public_key.nsquare)
+#        if plaintext >= self.public_key.n - self.public_key.max_int:
+#            # Very large plaintext, play a sneaky trick using inverses
+#            neg_c = gmpy_math.invert(self.ciphertext(False), self.public_key.nsquare)
+#            neg_scalar = self.public_key.n - plaintext
+#            ciphertext = gmpy_math.powmod(neg_c, neg_scalar, self.public_key.nsquare)
+#        else:
+#            ciphertext = gmpy_math.powmod(self.ciphertext(False), plaintext, self.public_key.nsquare)
+        
+        ciphertext = (self.ciphertext(False) * plaintext) % self.public_key.nsquare
 
         exponent = self.exponent + encode.exponent
+
+        LOGGER.info("Exit __mul__")
 
         return PaillierEncryptedNumber(self.public_key, ciphertext, exponent)
 
@@ -338,6 +365,13 @@ class PaillierEncryptedNumber(object):
     def __raw_add(self, e_x, e_y, exponent):
         """return the integer E(x + y) given ints E(x) and E(y).
         """
-        ciphertext = gmpy_math.mpz(e_x) * gmpy_math.mpz(e_y) % self.public_key.nsquare
 
-        return PaillierEncryptedNumber(self.public_key, int(ciphertext), exponent)
+        LOGGER.info("Enter __raw_add")
+
+#        ciphertext = gmpy_math.mpz(e_x) * gmpy_math.mpz(e_y) % self.public_key.nsquare
+        ciphertext = gmpy_math.mpz(e_x) + gmpy_math.mpz(e_y) % self.public_key.nsquare
+        my_result =  PaillierEncryptedNumber(self.public_key, int(ciphertext), exponent)
+
+        LOGGER.info("Exit __raw_add")
+      
+        return my_result
